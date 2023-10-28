@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -9,15 +15,20 @@
 */
 bool do_system(const char *cmd)
 {
-
+    int retVal;
 /*
  * TODO  add your code here
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    retVal = system(cmd);
+    if(retVal != -1)
+        return true;
+    else
+        return false;
 
-    return true;
+    // return true;
 }
 
 /**
@@ -40,6 +51,8 @@ bool do_exec(int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    int wstatus;
+    int return_value;
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
@@ -58,9 +71,31 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    fflush(stdout);
+    int pid = fork();
+
+    if (pid < 0) {
+        // Fork failed
+        perror("Fork failed\n");
+        return false;
+    } else if (pid == 0) {
+        if(execv(command[0], command) == -1)
+        {
+            perror("execv failed\n"); // This line will only execute if execv fails
+            exit(1);
+        }
+    } else {
+        // Parent process
+        waitpid(pid, &wstatus, 0); // Wait for the child process to finish
+        return_value = WEXITSTATUS(wstatus); // Extract return value from wstatus
+        // printf("return value from pid %d is %d\n", pid, return_value);
+        // printf("Child complete\n");
+    }
 
     va_end(args);
 
+    if (return_value)
+        return false;
     return true;
 }
 
@@ -92,6 +127,37 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    fflush(stdout);
+    int ret = fork();
+    switch (ret) {
+        case -1:
+            perror("fork error");
+            return false;
+        case 0: {
+            int fd = creat(outputfile, 0644);
+            if (fd == -1) {
+                perror("creat error");
+                abort();
+            }
+            ret = dup2(fd, STDOUT_FILENO);
+            if (ret == -1) {
+                perror("dup2 error");
+                abort();
+            }
+            close(fd);
+            ret = execv(command[0], command);
+            if (ret == -1) {
+                perror("execv error");
+                abort();
+            }
+        }
+        default:
+            ret = waitpid(ret, NULL, 0);
+            if (ret == -1) {
+                perror("waitpid");
+                return false;
+            }
+    }
 
     va_end(args);
 
